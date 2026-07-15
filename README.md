@@ -20,29 +20,27 @@ A dynamic, interactive web application built with Dash and Folium that visualize
 
 ## 🛠️ Technology Stack
 
-- **[Dash (Plotly)](https://dash.plotly.com/)**: Serves the web framework and user interface.
-- **[Folium](https://python-visualization.github.io/folium/)**: Handles the generation of the interactive Leaflet.js map.
-- **Python 3**: The core language powering the backend logic.
+- **[Folium](https://python-visualization.github.io/folium/)**: Generates the interactive Leaflet.js map.
+- **Python 3**: The core language powering the map-building logic.
+
+The app renders a single self-contained `nuclear_fallout_map.html` file and opens it in your browser — no web server to start or stop.
 
 ## 🚀 Getting Started
 
-### Prerequisites
+### Quick start (Windows)
 
-Ensure you have Python installed on your machine. You will also need the required Python libraries. You can install the core dependencies via pip:
+Double-click **`run.bat`**. It installs the dependencies on first run, builds the map, and opens it in your default browser.
+
+### Manual
+
+Ensure Python 3 is installed, then:
 
 ```bash
-pip install dash folium branca
-```
-
-### Running the Application
-
-1. Clone the repository to your local machine.
-2. Navigate to the project directory.
-3. Run the main application file:
-```bash
+pip install -r requirements.txt
 python src/main.py
 ```
-4. Open your web browser and navigate to `http://127.0.0.1:8050/`.
+
+This writes `nuclear_fallout_map.html` to the project root and opens it. State borders are loaded from the bundled `src/india_state.geojson` (fetched once from the source if that file is ever missing), so the map works offline.
 
 ## 📜 License
 This project is open-source. See the `LICENSE` file for details.

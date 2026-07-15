@@ -1,12 +1,14 @@
-import dash
-from dash import dcc, html
+import os
+import json
+import pathlib
+import urllib.request
+import webbrowser
+
 import folium
 from folium.plugins import MarkerCluster, MeasureControl
-import urllib.request
-import json
 from branca.element import Element
 
-# Sample data: List of nuclear reactors in India with their latitude and longitude
+# Nuclear reactors in India (name, latitude, longitude)
 nuclear_reactors = [
     {"name": "Tarapur Nuclear Power Station", "latitude": 19.8400, "longitude": 72.7758},
     {"name": "Rawatbhata (Rajasthan) Nuclear Power Plant", "latitude": 24.9980, "longitude": 76.3060},
@@ -14,7 +16,7 @@ nuclear_reactors = [
     {"name": "Kaiga Nuclear Power Plant", "latitude": 14.9167, "longitude": 74.5833},
     {"name": "Kudankulam Nuclear Power Plant", "latitude": 8.1636, "longitude": 77.7020},
     {"name": "Narora Atomic Power Station", "latitude": 28.1600, "longitude": 78.4900},
-    {"name": "Kakrapar Nuclear Power Plant", "latitude": 21.8394, "longitude": 75.6400}
+    {"name": "Kakrapar Nuclear Power Plant", "latitude": 21.2365, "longitude": 73.3500}
 ]
 
 # Define radii, colors, and labels for the fallout zones
@@ -24,8 +26,53 @@ labels = ['5 km (exclusion zone)', '30 km (evacuation planning)',
           '80 km (relocation consideration)', '300 km (food/water monitoring)',
           '1000 km (trace detection envelope)']
 
-def create_map_html():
-    m = folium.Map(location=[20, 78], zoom_start=5)
+major_cities = [
+    ("New Delhi", 28.6139, 77.2090),
+    ("Mumbai", 19.0760, 72.8777),
+    ("Kolkata", 22.5726, 88.3639),
+    ("Chennai", 13.0827, 80.2707),
+    ("Bengaluru", 12.9716, 77.5946),
+    ("Hyderabad", 17.3850, 78.4867),
+    ("Ahmedabad", 23.0225, 72.5714),
+    ("Pune", 18.5204, 73.8567),
+    ("Lucknow", 26.8467, 80.9462),
+    ("Jaipur", 26.9124, 75.7873),
+    ("Bhopal", 23.2599, 77.4126),
+    ("Patna", 25.5941, 85.1376),
+    ("Surat", 21.1702, 72.8311),
+    ("Indore", 22.7196, 75.8577),
+]
+
+GEOJSON_LOCAL = os.path.join(os.path.dirname(__file__), 'india_state.geojson')
+GEOJSON_URL = 'https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson'
+OUTPUT_HTML = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'nuclear_fallout_map.html')
+
+
+def _check_coords():
+    # India bounding box; catches gross errors and lat/lon swaps in the data above.
+    for name, lat, lon in [(r['name'], r['latitude'], r['longitude']) for r in nuclear_reactors] + \
+                          [(c[0], c[1], c[2]) for c in major_cities]:
+        assert 6 <= lat <= 37, f"{name}: latitude {lat} outside India"
+        assert 68 <= lon <= 98, f"{name}: longitude {lon} outside India"
+
+
+def load_states():
+    """State-border GeoJSON, loaded from the shipped local file.
+    Self-populating: fetches once from the source if the file is missing."""
+    if os.path.exists(GEOJSON_LOCAL):
+        with open(GEOJSON_LOCAL, encoding='utf-8') as f:
+            return json.load(f)
+    with urllib.request.urlopen(GEOJSON_URL, timeout=15) as resp:
+        data = resp.read()
+    with open(GEOJSON_LOCAL, 'wb') as f:
+        f.write(data)
+    return json.loads(data)
+
+
+def build_map():
+    # CartoDB tiles: no Referer-policy block when opened as a local file:// page,
+    # and the light basemap keeps the colored zones readable.
+    m = folium.Map(location=[20, 78], zoom_start=5, tiles='CartoDB positron')
     marker_cluster = MarkerCluster().add_to(m)
 
     # Prepare toggleable feature groups (one per radius/severity)
@@ -55,38 +102,19 @@ def create_map_html():
             ).add_to(fg)
 
     # Add major cities
-    major_cities = [
-        ("New Delhi", 28.6139, 77.2090),
-        ("Mumbai", 19.0760, 72.8777),
-        ("Kolkata", 22.5726, 88.3639),
-        ("Chennai", 13.0827, 80.2707),
-        ("Bengaluru", 12.9716, 77.5946),
-        ("Hyderabad", 17.3850, 78.4867),
-        ("Ahmedabad", 23.0225, 72.5714),
-        ("Pune", 18.5204, 73.8567),
-        ("Lucknow", 26.8467, 80.9462),
-        ("Jaipur", 26.9124, 75.7873),
-        ("Bhopal", 23.2599, 77.4126),
-        ("Patna", 25.5941, 85.1376),
-        ("Surat", 21.1702, 72.8311),
-        ("Indore", 22.7196, 75.8577)
-    ]
     for name, lat, lon in major_cities:
         folium.CircleMarker([lat, lon], radius=4, color='#000000', fill=True, fill_color='#000000', fill_opacity=0.9,
-                           popup=name, tooltip=name).add_to(m)
+                            popup=name, tooltip=name).add_to(m)
 
-    # Attempt to fetch and overlay India state borders (public GeoJSON)
+    # Overlay India state borders (optional — skip silently if unavailable)
     try:
-        geojson_url = 'https://raw.githubusercontent.com/geohacker/india/master/state/india_state.geojson'
-        with urllib.request.urlopen(geojson_url, timeout=10) as resp:
-            states_geo = json.load(resp)
+        states_geo = load_states()
         folium.GeoJson(states_geo, name='State borders', style_function=lambda f: {
             'fillOpacity': 0,
             'color': '#444444',
             'weight': 1
         }, control=False).add_to(m)
     except Exception:
-        # If fetching fails, continue without borders
         pass
 
     # Add measure control (distance/area) as a scale helper
@@ -107,7 +135,6 @@ def create_map_html():
     <div style="margin-top:4px;"><span style="display:inline-block;width:8px;height:8px;background:black;border-radius:50%;margin-right:6px;margin-left:4px;"></span> Major Cities</div>
     </div>
     '''
-
     m.get_root().html.add_child(Element(legend_html))
 
     # Add title (HTML) at top-center
@@ -118,18 +145,11 @@ def create_map_html():
     '''
     m.get_root().html.add_child(Element(title_html))
 
-    return m.get_root().render()
+    return m
 
-app = dash.Dash(__name__)
-app.title = "Nuclear Fallout Risk Map"
-
-app.layout = html.Div([
-    html.Iframe(
-        id='map',
-        srcDoc=create_map_html(),
-        style={'width': '100%', 'height': '100vh', 'border': 'none', 'margin': '0', 'padding': '0'}
-    )
-], style={'width': '100vw', 'height': '100vh', 'margin': '0', 'padding': '0', 'overflow': 'hidden'})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    _check_coords()
+    build_map().save(OUTPUT_HTML)
+    print('Saved map to', OUTPUT_HTML)
+    webbrowser.open(pathlib.Path(OUTPUT_HTML).as_uri())
